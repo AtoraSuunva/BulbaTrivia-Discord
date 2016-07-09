@@ -9,7 +9,7 @@ const tumblr = require('tumblr'); //tumblr woo
 const Auth = require('./auth.json'); //Auth details
 var entities = require("entities"); //fug enities
 
-const version = '1.0.0';
+const version = '1.0.1';
 
 var totalPosts = 0; //For random quotes, you'll see why later
 var currentOffset = 0;
@@ -93,10 +93,16 @@ bulba.on('message', function(message) { //switch is for the weak
 
       if (response.posts[0] !== undefined) {
         totalPosts = response.total_posts; //update because why not
-
-        bulba.sendMessage(message.channel,
-          '*"' + entities.decodeHTML(response.posts[0].text) + '"*' + '\n' +
-          '—__' + response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] + '__');
+		
+		if (response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined) { //quick and dirty fix ;)
+			bulba.sendMessage(message.channel,
+			  '*"' + entities.decodeHTML(response.posts[0].text) + '"*' + '\n' +
+			  response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1]);
+		} else {
+			ulba.sendMessage(message.channel,
+			  '*"' + entities.decodeHTML(response.posts[0].text) + '"*' + '\n' +
+			  '—__' + response.posts[0].source + '__');
+		}
 
         console.log('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
       } else {
