@@ -37,7 +37,12 @@ bulba.on('ready', function() {
     totalPosts = response.total_posts;
   });
 
-  console.log('Everything is ready!');
+  botLog('Everything is ready!');
+});
+
+bulba.on('disconnect', () => {
+  botLog('Disconnected... time to kms');
+  process.exit(1);
 });
 
 //ACTUAL BOT
@@ -104,8 +109,9 @@ bulba.on('message', function(message) { //switch is for the weak
 			  '—__' + response.posts[0].source + '__');
 		}
 
-        console.log('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
+        botLog('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
       } else {
+        botLog('aaaaaaaaaaaaaaaaaaaaaaa: ' + currentOffset);
         bulba.sendMessage(message.channel, 'Sorry! Something went wrong! Tell Atlas `posts undefined`.');
       }
     });
@@ -122,14 +128,14 @@ bulba.on('message', function(message) { //switch is for the weak
 
     var content = message.content.replace('++bulba eval', '');
 
-    console.log('-------------------------EVAL STUFF');
+    botLog('-------------------------EVAL STUFF');
 
     try {
       var result = eval(content);
-      console.log(result);
+      botLog(result);
       bulba.sendMessage(message.channel, '`' + result + '`');
     } catch (err) {
-      console.log(err);
+      botLog(err);
       bulba.sendMessage(message.channel, '`' + err + '`');
     }
   }
@@ -157,24 +163,31 @@ function randInt(max) { //1-max, for the offset
 //AUTH STUFF
 
 if (Auth.discord.token !== '') {
-  console.log('Logged in with token!');
+  botLog('Logged in with token!');
   bulba.loginWithToken(Auth.discord.token);
 
 } else if (Auth.discord.email !== '' && Auth.discord.password !== '') {
   bulba.login(Auth.discord.email, Auth.discord.password, function (error, token) {
-    console.log('Logged in with email + pass!');
+    botLog('Logged in with email + pass!');
     Auth.discord.token = token;
 
     fs.writeFile('./auth.json', JSON.stringify(Auth, null, 4), function(err) {
       if(err) {
-        console.log(err + '\n===\nError while saving token');
+        botLog(err + '\n===\nError while saving token');
       } else {
-        console.log('Token saved');
+        botLog('Token saved');
       }
     });
 
   });
 } else {
-  console.log('No authentication details found!');
+  botLog('No authentication details found!');
   process.exit(1);
+}
+
+function botLog(message) { //log a thing to both a channel AND the console
+  console.log(message);
+  if (Auth.logChannel !== undefined && Auth.logChannel !== '') {
+    bulba.sendMessage(Auth.logChannel, '```xl\n' + message + '\n```');
+  }
 }
