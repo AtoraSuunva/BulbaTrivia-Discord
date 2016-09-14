@@ -37,11 +37,11 @@ bulba.on('ready', function() {
     totalPosts = response.total_posts;
   });
 
-  botLog('Everything is ready!');
+  console.log('Everything is ready!');
 });
 
 bulba.on('disconnect', () => {
-  botLog('Disconnected... time to kms');
+  console.log('Disconnected... time to kms');
   process.exit(1);
 });
 
@@ -109,9 +109,9 @@ bulba.on('message', function(message) { //switch is for the weak
 			  '—__' + response.posts[0].source + '__');
 		}
 
-        botLog('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
+        console.log('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
       } else {
-        botLog('aaaaaaaaaaaaaaaaaaaaaaa: ' + currentOffset);
+        console.log('aaaaaaaaaaaaaaaaaaaaaaa: ' + currentOffset);
         bulba.sendMessage(message.channel, 'Sorry! Something went wrong! Tell Atlas `posts undefined`.');
       }
     });
@@ -128,14 +128,14 @@ bulba.on('message', function(message) { //switch is for the weak
 
     var content = message.content.replace('++bulba eval', '');
 
-    botLog('-------------------------EVAL STUFF');
+    console.log('-------------------------EVAL STUFF');
 
     try {
       var result = eval(content);
-      botLog(result);
+      console.log(result);
       bulba.sendMessage(message.channel, '`' + result + '`');
     } catch (err) {
-      botLog(err);
+      console.log(err);
       bulba.sendMessage(message.channel, '`' + err + '`');
     }
   }
@@ -163,25 +163,25 @@ function randInt(max) { //1-max, for the offset
 //AUTH STUFF
 
 if (Auth.discord.token !== '') {
-  botLog('Logged in with token!');
+  console.log('Logged in with token!');
   bulba.loginWithToken(Auth.discord.token);
 
 } else if (Auth.discord.email !== '' && Auth.discord.password !== '') {
   bulba.login(Auth.discord.email, Auth.discord.password, function (error, token) {
-    botLog('Logged in with email + pass!');
+    console.log('Logged in with email + pass!');
     Auth.discord.token = token;
 
     fs.writeFile('./auth.json', JSON.stringify(Auth, null, 4), function(err) {
       if(err) {
-        botLog(err + '\n===\nError while saving token');
+        console.log(err + '\n===\nError while saving token');
       } else {
-        botLog('Token saved');
+        console.log('Token saved');
       }
     });
 
   });
 } else {
-  botLog('No authentication details found!');
+  console.log('No authentication details found!');
   process.exit(1);
 }
 
