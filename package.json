@@ -1,0 +1,27 @@
+{
+  "name": "bulbatrivia-discord",
+  "version": "1.1.0",
+  "description": "Gets random useless bulbapedia triva",
+  "main": "Bulba.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AtlasTheBot/BulbaTrivia-Discord.git"
+  },
+  "keywords": [
+    "bulba"
+  ],
+  "author": "AtlasTheBot",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AtlasTheBot/BulbaTrivia-Discord/issues"
+  },
+  "homepage": "https://github.com/AtlasTheBot/BulbaTrivia-Discord#readme",
+  "dependencies": {
+    "discord.js": "^9.2.0",
+    "entities": "^1.1.1",
+    "tumblr": "^0.4.1"
+  }
+}

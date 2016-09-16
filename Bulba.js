@@ -6,10 +6,10 @@
 
 const Discord = require('discord.js'); //Handles the API
 const tumblr = require('tumblr'); //tumblr woo
+const entities = require("entities"); //fug enities
 const Auth = require('./auth.json'); //Auth details
-var entities = require("entities"); //fug enities
 
-const version = '1.0.2';
+const version = '1.1.0';
 
 var totalPosts = 0; //For random quotes, you'll see why later
 var currentOffset = 0;
@@ -18,41 +18,33 @@ var oauth = {
   consumer_key: Auth.tumblr.token
 };
 
-var bulba = new Discord.Client({
-  "autoReconnect": true
-});
+var bulba = new Discord.Client();
 
 var blog = new tumblr.Blog('thanksbulbapedia.tumblr.com', oauth);
 
 const inviteLink = "https://discordapp.com/oauth2/authorize?client_id=200723686205030400&scope=bot&permissions=0";
 
-bulba.on('ready', function() {
-  bulba.setPlayingGame('+bulba | +bulba help');
+bulba.on('ready', () => {
+  bulba.user.setStatus('online', '+bulba | +bulba help');
 
   blog.quote({limit: 1}, function(error, response) {
     if (error) {
       throw new Error(error);
     }
-
     totalPosts = response.total_posts;
   });
 
   console.log('Everything is ready!');
 });
 
-bulba.on('disconnect', () => {
-  console.log('Disconnected... time to kms');
-  process.exit(1);
-});
-
 //ACTUAL BOT
-bulba.on('message', function(message) { //switch is for the weak
+bulba.on('message', message => { //switch is for the weak
   if (message.author.equals(bulba.user) || message.author.bot) return; //Don't reply to itself or bots
 
   message.content = cleanMessage(message); //Clean stuff between `` so it doesn't bother reading code
 
   if(message.content.indexOf('+bulba help') === 0) {
-    bulba.sendMessage(message.channel, '```xl' + '\n' +
+    message.channel.sendMessage('```xl' + '\n' +
       '+bulba        => Trivia from BulbaPedia.' + '\n' +
       '+bulba info   => Info about the bot.' + '\n' +
       '+bulba help   => Help menu (you know, this one).' + '\n' +
@@ -62,7 +54,7 @@ bulba.on('message', function(message) { //switch is for the weak
   }
 
   if(message.content.indexOf('+bulba info') === 0) {
-    bulba.sendMessage(message.channel,
+    message.channel.sendMessage(
       'BulbaTrivia V' + version + ' by AtlasTheBot (@Atlas)' + '\n' +
       'Source: https://github.com/AtlasTheBot/BulbaTrivia-Discord' + '\n' +
       'Official Chat: https://discord.gg/0w6AYrrMIUfO71oV' + '\n' +
@@ -73,10 +65,10 @@ bulba.on('message', function(message) { //switch is for the weak
   }
 
   if(message.content.indexOf('+bulba invite') === 0) {
-    bulba.sendMessage(message.channel,
+    message.channel.sendMessage(
       'Invite Link: ' + inviteLink + '\n' +
-      'but why?');
-
+      'but why?'
+    );
     return;
   }
 
@@ -88,11 +80,10 @@ bulba.on('message', function(message) { //switch is for the weak
     //1. Get the number of posts
     //2. Get a random number from 0 to totalPosts
     //3. Use that as a offset
-    //it's horrible but it works sooo
 
     blog.quote({limit: 1, offset: currentOffset}, function(error, response) {
       if (error) {
-        bulba.sendMessage(message.channel, 'Sorry! Something went wrong! Tell Atlas `that\' it, I quit`.');
+        message.channel.sendMessage('Sorry! Something went wrong! Tell Atlas `that\'s it, I quit`.');
         throw new Error(error);
       }
 
@@ -100,19 +91,21 @@ bulba.on('message', function(message) { //switch is for the weak
         totalPosts = response.total_posts; //update because why not
 
 		if (response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined) { //quick and dirty fix ;)
-			bulba.sendMessage(message.channel,
+			message.channel.sendMessage(
 			  '*"' + entities.decodeHTML(response.posts[0].text) + '"*' + '\n' +
-			  '—' + response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1]);
+			  '—' + response.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1]
+      );
 		} else {
-			ulba.sendMessage(message.channel,
+			message.channel.sendMessage(
 			  '*"' + entities.decodeHTML(response.posts[0].text) + '"*' + '\n' +
-			  '—__' + response.posts[0].source + '__');
+			  '—__' + response.posts[0].source + '__'
+      );
 		}
 
-        console.log('Showed ' + response.posts[0].short_url + ' to ' + message.author.name + '#' + message.author.discriminator + ' (' + message.author.id + ')');
+        console.log('Showed ' + response.posts[0].short_url + ' to ' + message.author.username + '#' + message.author.discriminator + ' (' + message.author.id + ')');
       } else {
         console.log('aaaaaaaaaaaaaaaaaaaaaaa: ' + currentOffset);
-        bulba.sendMessage(message.channel, 'Sorry! Something went wrong! Tell Atlas `posts undefined`.');
+        message.channel.sendMessage('Sorry! Something went wrong! Tell Atlas `posts undefined`.');
       }
     });
 
@@ -122,7 +115,7 @@ bulba.on('message', function(message) { //switch is for the weak
   if(message.content.indexOf('++bulba eval') === 0) {
 
     if (message.author.id !== "74768773940256768") { //ain't nobody else runnin' eval on my watch
-      bulba.sendMessage(message.channel, 'Nice try, but no.');
+      message.channel.sendMessage('no');
       return;
     }
 
@@ -133,10 +126,10 @@ bulba.on('message', function(message) { //switch is for the weak
     try {
       var result = eval(content);
       console.log(result);
-      bulba.sendMessage(message.channel, '`' + result + '`');
+      message.channel.sendMessage('`' + result + '`');
     } catch (err) {
       console.log(err);
-      bulba.sendMessage(message.channel, '`' + err + '`');
+      message.channel.sendMessage('`' + err + '`');
     }
   }
 });
@@ -164,30 +157,11 @@ function randInt(max) { //1-max, for the offset
 
 if (Auth.discord.token !== '') {
   console.log('Logged in with token!');
-  bulba.loginWithToken(Auth.discord.token);
-
+  bulba.login(Auth.discord.token);
 } else if (Auth.discord.email !== '' && Auth.discord.password !== '') {
-  bulba.login(Auth.discord.email, Auth.discord.password, function (error, token) {
-    console.log('Logged in with email + pass!');
-    Auth.discord.token = token;
-
-    fs.writeFile('./auth.json', JSON.stringify(Auth, null, 4), function(err) {
-      if(err) {
-        console.log(err + '\n===\nError while saving token');
-      } else {
-        console.log('Token saved');
-      }
-    });
-
-  });
+  console.log('Logged in with email + pass!');
+  bulba.login(Auth.discord.email, Auth.discord.password);
 } else {
   console.log('No authentication details found!');
   process.exit(1);
-}
-
-function botLog(message) { //log a thing to both a channel AND the console
-  console.log(message);
-  if (Auth.logChannel !== undefined && Auth.logChannel !== '') {
-    bulba.sendMessage(Auth.logChannel, '```xl\n' + message + '\n```');
-  }
 }
