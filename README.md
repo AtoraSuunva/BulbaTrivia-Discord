@@ -10,12 +10,10 @@ Test it on Discord [here](https://discord.gg/0w6AYrrMIUfO71oV)!
 
 ## Connect to Discord
 
-Literally click 4 times.
-
 0. Click [here](https://discordapp.com/oauth2/authorize?client_id=200723686205030400&scope=bot&permissions=0).
 1. Select a server.
 2. Authorize.
-3. gg no re
+3. Done!
 
 ## Manual Setup
 
@@ -65,6 +63,4 @@ Instant, in-chat help for when you forget how to type `+bulba`.
 ## License
 Whoever uses this project (The USER) must agree to never hit Atlas (The AUTHOR) with a cactus. Or insert said cactus into any orifices. The AUTHOR may request the USER at any time to "Never talk to me or my bot ever again." or to "Drop and give me 20". The USER must also admit to the AUTHOR that otters are "pretty neat animals" when asked about them. Any and all violation of these clauses will allow the AUTHOR to take one (1) soul from the offending USER. These clauses extend for as long as the bot is in use, so not even through death can the USER excape the AUTHOR.
 
-Also I don't know what any of the licenses mean or be bothered to keep track of who uses it.
-
-Although if you do use this (God knows why), then I'd love to hear about it!
+Or more simply: yeah do whatever with this code lmao

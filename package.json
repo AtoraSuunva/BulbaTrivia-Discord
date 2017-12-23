@@ -20,8 +20,12 @@
   },
   "homepage": "https://github.com/AtlasTheBot/BulbaTrivia-Discord#readme",
   "dependencies": {
-    "discord.js": "^9.2.0",
+    "discord.js": "^11.2.1",
     "entities": "^1.1.1",
-    "tumblr": "^0.4.1"
+    "erlpack": "hammerandchisel/erlpack",
+    "recursive-readdir-sync": "^1.0.6",
+    "request-promise-native": "^1.0.5",
+    "tumblr": "^0.4.1",
+    "uws": "^9.14.0"
   }
 }

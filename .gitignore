@@ -83,5 +83,10 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# Extra things
+config.json
+err.log
 auth.json
+yarn.lock
 *.js~*
