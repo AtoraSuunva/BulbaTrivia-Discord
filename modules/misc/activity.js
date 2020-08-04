@@ -1,13 +1,14 @@
 //set a random playing game every X whatever
 module.exports.config = {
-  name: 'playing',
-  invokers: ['playing'],
-  help: 'Randomizes playing/allows manual playing setting',
-  expandedHelp: '`playing`\nSelect new random playing\n`playing [something]`\nNew custom playing, stays until bot reboot/`playing` is used',
+  name: 'activity',
+  invokers: ['activity'],
+  help: 'Allows to randomly/manually set an activity',
+  expandedHelp: 'Format is `{TYPE} ACTIVITY MESSAGE`\nPLAYING, STREAMING, LISTENING, WATCHING\nBot owner only.',
+  usage: ['Random one', 'activity', 'Manual', 'activity something blah', 'Manual and custom', '{streaming} the bee movie'],
   invisible: true
 }
 
-const playings = [
+const statuses = [
 'with Mediawiki!', 'on Bulbapedia!', 'I\'m #1!', 'フシギダネ', 'with some random facts',
 'with """"fun"""" facts', '"thanks", bulbapedia', 'Pick me!',
 '{streaming} the pokeyman anime!', '{streaming} pokerman', '{streaming} the Digimon anime',
@@ -25,7 +26,7 @@ const playings = [
 ]
 
 //strings starting with '{streaming}' will be shown as "Streaming X"
-const append = ' | bulba help | p?help' //use this to keep a constant message after
+const appendMsg = ' | bulba help | p?help' //use this to keep a constant message after
 const interval = 60 * 15 //in seconds
 const twitch = 'https:\/\/twitch.tv/logout' //memes
 let interv
@@ -33,44 +34,49 @@ let interv
 module.exports.events = {}
 
 module.exports.events.ready = bot => {
-  bot.user.setGame(getPlaying())
-  interv = setInterval(() => bot.user.setPresence({game: getPlaying()}), interval * 1000)
+  bot.user.setActivity(...getPlaying())
+
+  interv = setInterval(() => bot.user.setActivity(...getPlaying()), interval * 1000)
 }
 
 module.exports.events.message = (bot, message) => {
-  let args = bot.modules.shlex(message)
-
   if (message.author.id !== bot.modules.config.owner.id)
-    return message.channel.send('Nah, how about I play what I want.')
+    return message.channel.send('Nah, how about I do what I want.')
 
-  if (args[1] === undefined) {
-    let game = getPlaying()
-    bot.user.setPresence({game})
-    interv = setInterval(() => bot.user.setPresence({game: getPlaying()}), interval * 1000)
-    message.channel.send(`Now *${(game.url) ? 'streaming' : 'playing'}* **${game.name}**`)
-  } else {
-    bot.user.setPresence({game: {name: args[1], url: (args[2]) ? twitch : undefined, type: 0}})
+  let [cmd, ...playing] = bot.modules.shlex(message)
+  playing = playing.join(' ')
+
+  let activity = playing ? getPlayingFrom(playing) : getPlaying()
+
+  bot.user.setActivity(...activity)
+
+  if (playing) {
     clearInterval(interv)
-    message.channel.send(`Now *${(args[2]) ? 'streaming' : 'playing'}* **${args[1]}**`)
+  } else {
+    interv = setInterval(() => bot.user.setActivity(...getPlaying()), interval * 1000)
   }
+
+  bot.user.setActivity(...activity)
+
+  message.channel.send(`Now *${activity[1].type.toLowerCase()}* **${activity[0]}**`)
 }
 
-//returns an array of [game, ?streamLink]
-//steamLink if applicable
 function getPlaying() {
-  let streamLink
-  let game = randChoice(playings) + append
-
-  if (game.startsWith('{streaming}')) {
-    streamLink = twitch
-    game = game.replace(/^{streaming}\s+/, '')
-    return {name: game, url: streamLink, type: 0}
-  }
-
-  return {name: game, type: 0}
+  return getPlayingFrom(randomChoice(statuses), true)
 }
 
-function randChoice(arr) {
+// Returns [name, {url, type}]
+function getPlayingFrom(str, append = false) {
+  let choice = str.match(/(?:{(\w+)})?(.*)/)
+
+  let name = (choice[2] + (append ? appendMsg : '')).trim()
+  let type = (choice[1] || 'PLAYING').toUpperCase()
+  let url = (type === 'STREAMING') ? twitch : undefined
+
+  return [name, {url, type}]
+}
+
+function randomChoice(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 

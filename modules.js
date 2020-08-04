@@ -7,13 +7,13 @@ const fs = require('fs')
 const path = require('path')
 const Logger = require('./logger.js')
 const Settings = require('./settings.js')
-const request = require('request-promise-native')
+const snek = require('snekfetch')
 const recurReadSync = require('recursive-readdir-sync') //to read all files in a directory, including subdirectories
 //this allows you to sort modules into directories
 
 let config = module.exports.config = require('./config.json') //Settings for the module system
 let logger = module.exports.logger = new Logger('err.log', reportError, config.debug)
-let settings = module.exports.settings = new Settings()
+let settings = module.exports.settings = new Settings(logger)
 let sentMessages = new Discord.Collection(), maxSentMessagesCache = 100
 
 let modules = {}
@@ -142,6 +142,16 @@ let handler = {
   apply(target, thisArg, args) {
     let promise, [content, options] = args, callMsg = thisArg._message
 
+    const perms = thisArg.permissionsFor(bot.user)
+
+    if (!perms.has('SEND_MESSAGES'))
+      return
+
+    if ( ((content && content.embed) || (options && options.embed)) && !perms.has('EMBED_LINKS') ) {
+      logger.error('No embed support!!: ' + (new Error().stack))
+      return target.call(thisArg, '`[ Embeds are disabled and no non-embed version is available ]`')
+    }
+
     if ((content+'').trim() === '') {
       content = 'Empty Message.\n' +
                 (new Error()).stack.split('\n')[1].match(/(\/modules\/.+?)\)/)[1]
@@ -165,7 +175,7 @@ let handler = {
       logger.info('Edited old')
     }
 
-    if (!config.selfbot && callMsg && callMsg.author.id !== bot.user.id)
+    if (!config.selfbot && callMsg && callMsg.author.id !== bot.user.id && options && options.autoDelete !== false)
       promise.then(m => {
         sentMessages.set(callMsg.id, m)
         if (sentMessages.size > maxSentMessagesCache)
@@ -234,25 +244,34 @@ function startsWithInvoker(msg, invokers) {
  * @param  {Object}   options Shlex options
  * @return {string[]}         The result of the shlexed string
  */
-function shlex(str, {lowercaseCommand = false, lowercaseAll = false, stripOnlyCommand = false} = {}) {
+function shlex(str, {
+  lowercaseCommand = false,
+  lowercaseAll = false,
+  stripOnlyCommand = false,
+  invokers = []
+} = {}) {
   if (str.content) str = str.content
 
+  const regex = /"([\s\S]+?[^\\])"|'([\s\S]+?[^\\])'|([^\s]+)/gm //yay regex
+  let matches = []
+  let result
+
   for (let invoker of config.invokers) {
-    let repInvoker = (invoker+'').replace(/([\\\.\+\*\?\[\^\]\$\(\)\{\}\=\!\<\>\|\:])/g, "\\$1")
-    if (str.toLowerCase().startsWith(invoker.toLowerCase())) { //I'm so sorry
-      str = str.replace(new RegExp(repInvoker, 'i'), '')
+    if (str.toLowerCase().startsWith(invoker.toLowerCase())) {
+      str = str.substring(invoker.length)
       break
     }
   }
 
-  if (stripOnlyCommand) {
-    console.log('fuck')
-    return str
+  for (let invoker of invokers) {
+    if (str.toLowerCase().startsWith(invoker.toLowerCase())) {
+      matches.push(str.substring(0, invoker.length))
+      str = str.substring(invoker.length)
+      break
+    }
   }
 
-  let matches = []
-  let regex = /"([\s\S]+?[^\\])"|'([\s\S]+?[^\\])'|([^\s]+)/gm //yay regex
-  let result
+  if (stripOnlyCommand) return str
 
   for (;;) {
     result = regex.exec(str)
@@ -348,20 +367,26 @@ function loadModules() {
   let fails = []
 
   for (let file of moduleFiles) {
-    purgeCache(`${file}`)
+    purgeCache(file)
 
-    if (require(`${file}`).config.autoLoad === false) {
-      logger.debug(`Skipping ${file.replace(path.join(__dirname, 'modules/'), '')}: AutoLoad Disabled`)
-      continue
-    }
-
-    logger.debug(`Loading ${file.replace(path.join(__dirname, 'modules/'), '')}`)
     try {
-      modules[require(`${file}`).config.name] = require(`${file}`)
-      succ.push(require(`${file}`).config.name)
+      const rName = file.replace(path.join(__dirname, 'modules/'), '')
+      const rFile = require(file)
+
+      if (rFile.config === undefined)
+        continue
+
+      if (rFile.config.autoLoad === false) {
+        logger.debug(`Skipping ${rName}: AutoLoad Disabled`)
+        continue
+      }
+
+      logger.debug(`Loading ${rName}`)
+      modules[rFile.config.name] = rFile
+      succ.push(rFile.config.name)
     } catch (e) {
-      logger.warn(`Failed to load ${file.replace(path.join(__dirname, 'modules/'), '')}: \n${e}`)
-      fails.push(file.replace(path.join(__dirname, 'modules/')))
+      logger.warn(`Failed to load ${file}: \n${e}`)
+      fails.push(file)
     }
   }
 
@@ -381,15 +406,19 @@ function loadModule(moduleName) {
 
     for (let file of moduleFiles) {
       if (path.extname(file) !== '.js') continue
-      if (moduleName === require(file).config.name) {
-        logger.debug(`Loading ${file.replace(path.join(__dirname, 'modules/'), '')}`)
+
+      const rName = file.replace(path.join(__dirname, 'modules/'), '')
+      const rFile = require(file)
+
+      if (rFile.config && moduleName === rFile.config.name) {
+        logger.debug(`Loading ${rName}`)
         purgeCache(file)
-        modules[moduleName] = require(file)
+        modules[moduleName] = rFile
         return `Loaded ${moduleName} successfully`
       }
     }
 
-    return 'Could not find module'
+    return 'Could not find module.'
   } catch (e) {
     logger.error(e)
     return 'Something went wrong!'
@@ -436,7 +465,7 @@ function getModuleInfo(moduleName) {
       if (path.extname(file) !== '.js') continue
 
       let config = require(file).config
-      if (moduleName === config.name) {
+      if (config && moduleName === config.name) {
         let p = file
         let dir = path.parse(file).dir.split(path.sep).pop() //returns the folder it's in
         return {config, path: p, dir}
@@ -474,7 +503,7 @@ function reportError(err, errType) {
              + '\nStack Trace:\n```javascript\n' + new Error().stack + '\n```'
 
   if (!config.selfbot)
-    bot.users.get(config.owner.id).sendMessage(errMsg, {split: {prepend: '```js\n', append: '\n```'}})
+    bot.users.get(config.owner.id).send(errMsg, {split: {prepend: '```js\n', append: '\n```'}})
   return errID
 }
 module.exports.reportError = reportError
@@ -500,15 +529,10 @@ function writeFile(fileName, fileContent) {
  * @return {Promise} GitHub's response
  */
 function createGist(files, description = '') {
-  const o = {
-    method: 'POST',
-    uri: 'https://api.github.com' + '/gists',
-    headers: { 'User-Agent': `${bot.user.username} Bot by ${config.owner.username} on Discord` },
-    json: true,
-    body: { description, files }
-  }
-
-  return request(o)
+  return snek.post('https://api.github.com/gists', {
+    headers: { 'User-Agent': `${bot.user.username} Bot by ${config.owner.username} on Discord`},
+    data: {description, files}
+  })
 }
 module.exports.createGist = createGist
 
