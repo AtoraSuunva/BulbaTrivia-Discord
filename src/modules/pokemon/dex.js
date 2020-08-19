@@ -83,7 +83,7 @@ function gender(rate) {
 
 module.exports.events = {}
 module.exports.events.message = async (bot, message) => {
-  const [cmd, pokemon] = bot.modules.shlex(message)
+  const [cmd, pokemon] = bot.sleet.shlex(message)
 
   if (!pokemon) {
     return message.channel.send('So what pokemon do you want?')

@@ -8,7 +8,7 @@ module.exports.config = {
 
 module.exports.events = {}
 module.exports.events.message = (bot, message) => {
-  const [cmd] = bot.modules.shlex(message)
+  const [cmd] = bot.sleet.shlex(message)
   let score = [randInt(0,8), randInt(0,8)]
 
   message.channel.sendMessage(dedent`

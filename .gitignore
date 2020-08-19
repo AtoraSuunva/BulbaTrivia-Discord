@@ -90,3 +90,5 @@ err.log
 auth.json
 yarn.lock
 *.js~*
+src/modules/secret/
+ecosystem.config.js

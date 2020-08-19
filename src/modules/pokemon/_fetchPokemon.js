@@ -1,5 +1,5 @@
 const cheerio = require('cheerio')
-const snekfetch = require('snekfetch')
+const fetch = require('node-fetch')
 const api = {
   bulba: 'https://bulbapedia.bulbagarden.net/wiki/', // """api"""
   pokemon: 'https://pokeapi.co/api/v2/pokemon/',
@@ -27,8 +27,8 @@ async function getBio(poke) {
     // ech
     poke = bulbaMap[poke] || poke.split('-')[0]
 
-    const res = await snekfetch.get(api.bulba + poke)
-    const bio = cheerio.load(res.text)('#Biology').parent().nextUntil('h2').text().trim().replace(/\n/g, '\n\n')
+    const res = await fetch(api.bulba + poke).then(r => r.text())
+    const bio = cheerio.load(res)('#Biology').parent().nextUntil('h2').not('.thumb').text().trim().replace(/\n/g, '\n\n')
 
     if (bio === '') {
       throw new Error('Not a pokemon')
@@ -48,12 +48,11 @@ const getType = (types, i) => types.find(e => e.slot === i) || {type: {name: (i 
 
 async function getPoke(poke) {
   try {
-    const [resInfo, resSpecies] = await Promise.all([
-      snekfetch.get(api.pokemon + poke),
-      snekfetch.get(api.species + poke)])
+    const [info, species] = await Promise.all([
+        fetch(api.pokemon + poke).then(r => r.json()),
+        fetch(api.species + poke).then(r => r.json()),
+      ])
 
-    const info = resInfo.body
-    const species = resSpecies.body
     const bio = await getBio(info.name)
 
     const stats = {}
@@ -84,8 +83,8 @@ async function getPoke(poke) {
     }
 
   } catch (e) {
-    if (e.status === 404) {
-      throw new Error('Pokemon not found')
+    if (e.status === 404 || e instanceof fetch.FetchError) {
+      throw new Error('Pokemon not found. You can search pokemon by name or national dex ID.\nIf you are looking for Gen 8 pokemon, see this issue: <https://github.com/PokeAPI/pokeapi/issues/460>')
     } else {
       throw e
     }

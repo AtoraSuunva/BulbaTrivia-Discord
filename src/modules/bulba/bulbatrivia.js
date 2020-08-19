@@ -23,7 +23,7 @@ blog.quote({limit: 1}, (e, r) => {
 
 module.exports.events = {}
 module.exports.events.message = (bot, message) => {
-  const [cmd] = bot.modules.shlex(message)
+  const [cmd] = bot.sleet.shlex(message)
 
   if (cmd && !config.invokers.includes(cmd.toLowerCase())) return
 
