@@ -3,33 +3,53 @@
  */
 
 const Discord = require('discord.js')
+const escapeMarkdown = Discord.Util.escapeMarkdown
 const fs = require('fs')
 const path = require('path')
-const Logger = require('./logger.js')
-const Settings = require('./settings.js')
-const request = require('request-promise-native')
+const Logger = require('./Logger.js')
+const snek = require('snekfetch')
 const recurReadSync = require('recursive-readdir-sync') //to read all files in a directory, including subdirectories
 //this allows you to sort modules into directories
 
-let config = module.exports.config = require('./config.json') //Settings for the module system
-let logger = module.exports.logger = new Logger('err.log', reportError, config.debug)
-let settings = module.exports.settings = new Settings()
+const pmx = require('pmx').init({
+  http          : true, // HTTP routes logging (default: true)
+  ignore_routes : [], // Ignore http routes with this pattern (Default: [])
+  errors        : true, // Exceptions logging (default: true)
+  custom_probes : true, // Auto expose JS Loop Latency and HTTP req/s as custom metrics
+  network       : true, // Network monitoring at the application level
+})
+
+const metrics = {
+  messages_seen: pmx.probe().counter({name: 'Messages Seen'}),
+  messages_sent: pmx.probe().counter({name: 'Messages Sent'}),
+  commands_ran: pmx.probe().counter({name: 'Commands Ran'}),
+  modules_ran: pmx.probe().counter({name: 'Modules Ran'}),
+  guilds: pmx.probe().metric({name: 'Guilds'}),
+  ping: pmx.probe().histogram({name: 'Ping', measurement: 'mean'}),
+}
+
+setInterval(() => metrics.ping.update(bot.ping), 3000)
+
+const rootDir = path.join(__dirname)
+const configPath = path.join(rootDir, '../config.json')
+let config = module.exports.config = require(configPath)
+let logger = module.exports.logger = new Logger(path.join(rootDir, '../err.log'), reportError, config.debug)
 let sentMessages = new Discord.Collection(), maxSentMessagesCache = 100
+let bot
 
-let modules = {}
-loadModules()
+const dbSettings = {
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_DATABASE,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD
+}
 
-//Actually starts listening to events
-let events = getAllEvents()
-//We do this to avoid listening to events that no modules use
-//Unfortunately, this prevents adding a module that listens to a new event/adding a new event without restarting the bot
-//one day I might find a fix for this
+const pgp = require('pg-promise')({ capSQL: true })
+const db = pgp(dbSettings)
 
-//let unusedEvents = getAllEvents({getUnused: true}) //Used right after to tell discord.js what events to not care about, so we can get a performance b o o s t
-
-//logger.log(unusedEvents)
-
-const bot = new Discord.Client()
+module.exports.pgp = pgp
+module.exports.db = db
 
 /**
  * Load the listeners for all the events
@@ -39,10 +59,10 @@ function startEvents() {
   for (let event of events) {
     logger.debug(`Loading ${event}`)
     bot.on(event, (...args) => {
-      //logger.debug(`Got ${event} event!`)
       for (let module in modules) {
         if (modules[module].events[event] !== undefined) {
           try {
+            metrics.modules_ran.inc()
             modules[module].events[event](bot, ...args)
           } catch (e) {
             logger.error(e, `Module Err: ${event}`)
@@ -54,7 +74,11 @@ function startEvents() {
 
   //message doesn't like being in the loop
   //Also I need to do some extra checks anyways
-  bot.on('message', processMessage)
+  bot.on('message', m => {
+    metrics.messages_seen.inc()
+    metrics.guilds.set(bot.guilds.size)
+    processMessage(m)
+  })
 
   bot.on('messageUpdate', (oldmessage, message) => {
     if (oldmessage.content !== message.content)
@@ -67,18 +91,14 @@ function startEvents() {
     for (let module in modules) {
       if (modules[module].events.everyMessage !== undefined) {
         //logger.debug(`Running ${module}`)
-        try {
-          modules[module].events.everyMessage(bot, message)
-        } catch (e) {
-          ctx = {
-            guild: message.channel.guild ? message.channel.guild.id : null,
-            type: message.channel.type,
-            channel: message.channel.id,
-            messageId: message.id,
-            messageContent: message.content
+
+        new Promise((res, rej) => {
+          try {
+            modules[module].events.everyMessage(bot, message)
+          } catch (e) {
+            logErrorWithContext(e, message)
           }
-          logger.error(e.stack + '\n' + JSON.stringify(ctx, null, 4))
-        }
+        }).catch(e => logErrorWithContext(e, message))
       }
     }
 
@@ -96,19 +116,18 @@ function startEvents() {
         if (modules[module].config.invokers !== null && modules[module].config.invokers !== undefined)
           logger.debug(`Running ${module}`)
 
-        try {
-          modules[module].events.message(bot, message)
-        } catch (e) {
-          ctx = {
-            guild: message.channel.guild ? message.channel.guild.id : null,
-            type: message.channel.type,
-            channel: message.channel.id,
-            messageId: message.id,
-            messageContent: message.content
+        metrics.commands_ran.inc()
+
+        new Promise((res, rej) => {
+          try {
+            modules[module].events.message(bot, message)
+          } catch (e) {
+            logErrorWithContext(e, message)
           }
-          logger.error(e.stack + '\n' + JSON.stringify(ctx, null, 4))
-          message.channel.send(`Whoops, something went wrong!\nI sent ${config.owner.username} some debug info.`)
-        }
+        }).catch(e => {
+          logErrorWithContext(e, message)
+          message.channel.send(`Something went wrong!\nI sent ${config.owner.username} some debug info.`)
+        })
       }
     }
   }
@@ -136,13 +155,36 @@ function startEvents() {
 }
 //Some helper functions
 
+function logErrorWithContext(e, message) {
+  ctx = !message ? 'Message undefined' : {
+    guild: message.channel.guild ? message.channel.guild.id : null,
+    type: message.channel.type,
+    channel: message.channel.id,
+    messageId: message.id,
+    messageContent: message.content
+  }
+
+  logger.error(e.stack + '\n' + JSON.stringify(ctx, null, 2))
+}
+
 let send = Object.getOwnPropertyDescriptor(Discord.TextChannel.prototype, 'send')
 
 let handler = {
   apply(target, thisArg, args) {
     let promise, [content, options] = args, callMsg = thisArg._message
 
-    if ((content+'').trim() === '') {
+    const perms = thisArg.permissionsFor(bot.user)
+
+    if (!perms.has('SEND_MESSAGES'))
+      return
+
+    if ( ((content && content.embed) || (options && options.embed)) && !perms.has('EMBED_LINKS') ) {
+      logger.error('No embed support!!: ' + (new Error().stack))
+      return target.call(thisArg, '`[ Embeds are disabled and no non-embed version is available ]`')
+    }
+
+
+    if (((content+'').trim() === '') && options === undefined) {
       content = 'Empty Message.\n' +
                 (new Error()).stack.split('\n')[1].match(/(\/modules\/.+?)\)/)[1]
       // lol stacktraces
@@ -165,20 +207,20 @@ let handler = {
       logger.info('Edited old')
     }
 
-    if (!config.selfbot && callMsg && callMsg.author.id !== bot.user.id)
+    if (!config.selfbot && callMsg && callMsg.author.id !== bot.user.id && options && options.autoDelete !== false)
       promise.then(m => {
         sentMessages.set(callMsg.id, m)
         if (sentMessages.size > maxSentMessagesCache)
           sentMessages.delete(sentMessages.firstKey())
       })
 
+    metrics.messages_sent.inc()
     return promise
   }
 }
 
 send.value = new Proxy(send.value, handler)
 Object.defineProperty(Discord.TextChannel.prototype, 'send', send)
-
 
 /**
  * Checks if a message starts with both a global invoker and an invoker in `invokers`
@@ -228,31 +270,41 @@ function startsWithInvoker(msg, invokers) {
 /**
  * Removes the (global) invoker from a command and slices the arguments up into an array
  * m!test hello "there world!" aa
- * ['test', 'hello', 'there world', 'aa']
+0 * ['test', 'hello', 'there world', 'aa']
  *
  * @param  {string}   str     The string to shlex
  * @param  {Object}   options Shlex options
  * @return {string[]}         The result of the shlexed string
  */
-function shlex(str, {lowercaseCommand = false, lowercaseAll = false, stripOnlyCommand = false} = {}) {
+function shlex(str, {
+  lowercaseCommand = false,
+  lowercaseAll = false,
+  stripOnlyCommand = false,
+  invokers = []
+} = {}) {
+  if (str === undefined || str === null) return []
   if (str.content) str = str.content
 
+  const regex = /"([\s\S]+?[^\\])"|'([\s\S]+?[^\\])'|([^\s]+)/gm //yay regex
+  let matches = []
+  let result
+
   for (let invoker of config.invokers) {
-    let repInvoker = (invoker+'').replace(/([\\\.\+\*\?\[\^\]\$\(\)\{\}\=\!\<\>\|\:])/g, "\\$1")
-    if (str.toLowerCase().startsWith(invoker.toLowerCase())) { //I'm so sorry
-      str = str.replace(new RegExp(repInvoker, 'i'), '')
+    if (str.toLowerCase().startsWith(invoker.toLowerCase())) {
+      str = str.substring(invoker.length).trim()
       break
     }
   }
 
-  if (stripOnlyCommand) {
-    console.log('fuck')
-    return str
+  for (let invoker of invokers) {
+    if (str.toLowerCase().startsWith(invoker.toLowerCase())) {
+      matches.push(str.substring(0, invoker.length))
+      str = str.substring(invoker.length).trim()
+      break
+    }
   }
 
-  let matches = []
-  let regex = /"([\s\S]+?[^\\])"|'([\s\S]+?[^\\])'|([^\s]+)/gm //yay regex
-  let result
+  if (stripOnlyCommand) return str
 
   for (;;) {
     result = regex.exec(str)
@@ -269,6 +321,112 @@ function shlex(str, {lowercaseCommand = false, lowercaseAll = false, stripOnlyCo
   return matches.map(v => v.replace(/\\(")|\\(')/g, '$1'))
 }
 module.exports.shlex = shlex
+
+const uReg = {
+  full: /(.+#\d+)/,
+  user: /(\D+)/,
+  id: /(\d+)/,
+}
+
+async function extractMembers(str, source, {id = false, keepIds = false, invokers = [], noCmd = false} = {}) {
+  let guild
+  let message
+  let channel
+
+  if (source instanceof Discord.Guild)
+    guild = source
+  else if (source instanceof Discord.Message)
+    [guild, message, channel] = [source.guild, source, source.channel]
+  else if (source instanceof Discord.Channel)
+    [guild, channel] = [source.guild, source]
+  else
+    throw new Error('`source` must be one of [Guild, Message, Channel]')
+
+  const shlexed = shlex(str, { invokers })
+  let arr
+
+  if (noCmd) {
+    arr = shlexed
+  } else {
+    [cmd, ...arr] = shlexed
+  }
+
+  const users = []
+
+  await guild.fetchMembers()
+
+  for (let a of arr) {
+    let match
+    let u
+    let la = a.toLowerCase()
+
+    if (message && ['me', 'myself'].includes(la)) {
+      u = message.member
+    } else if (['you', 'yourself'].includes(la)) {
+      u = guild.me
+    } else if (['random', 'someone'].includes(la)) {
+      u = guild.members.random()
+    } else if (match = uReg.full.exec(a)) {
+      u = guild.members.find(m => m.user.tag === match[1])
+    } else if (match = uReg.id.exec(a)) {
+      u = guild.members.get(match[1]) || (keepIds ? match[1] : undefined)
+    } else if (message && guild) {
+      u = await interactiveFuzzyMatchMembers(message, la)
+    }
+
+    if (u) users.push(u)
+  }
+
+  if (id)
+    return users.map(m => m.id || m)
+
+  return users
+}
+module.exports.extractMembers = extractMembers
+
+function interactiveFuzzyMatchMembers(message, query) {
+  return new Promise(resolve => {
+    const results = [], exactResults = []
+
+    message.guild.members.forEach(m => {
+      if (m.user.username.toLowerCase().includes(query) || m.displayName.toLowerCase().includes(query))
+        results.push({ member: m, tag: m.user.tag, id: m.user.id, nickname: m.nickname })
+
+     if (m.user.username.toLowerCase() === query || m.displayName.toLowerCase() === query)
+        exactResults.push({ member: m, tag: m.user.tag, id: m.user.id, nickname: m.nickname })
+    })
+
+    if (results.length === 0) return resolve(null)
+    if (exactResults.length === 1) return resolve(exactResults[0].member)
+
+    const prompt = `${results.length} matches found, is one of these close?`
+    const userList = '```py\n'
+                   + results.map((v,i) =>
+                       `[${i}] ${v.tag}: ${v.id} ${v.nickname ? '-- Nickname: ' + v.nickname :''}`
+                     ).join('\n').substring(0, 1900)
+                   + '```'
+
+    message.channel.send(`${prompt}\n${userList}`)
+      .then(msg =>
+        msg.channel.awaitMessages(m => m.author.id === message.author.id && !Number.isNaN(parseInt(m.content)), { max: 1, time: 10000, errors: ['time']} )
+          .then(col => {
+            const n = parseInt(col.first().content)
+
+            if (results[n] === undefined) {
+              msg.edit(`"${n}" is not a valid choice, aborting\n${userList}`)
+              resolve(null)
+            } else {
+              msg.delete().catch(_ => {})
+              resolve(results[n].member)
+            }
+          }).catch(e => {
+            msg.edit(`Selection Timed Out\n${userList}`)
+            resolve(null)
+          })
+      )
+  })
+}
+
 /**
  * Gets all the events used by the modules
  * @param  {Object}   fuckIDunnoWhatJSDocWantsHere Object with only one property: getUnused. If the function should return unused events instead of used events
@@ -289,6 +447,8 @@ function getAllEvents({getUnused = false} = {}) {
   }
 
   let discordEvents = Object.keys(Discord.Constants.WSEvents)
+  // raw is valid as well
+  discordEvents.push('RAW')
 
   //We're asked to return unused events, not used.
   if (getUnused) {
@@ -314,23 +474,23 @@ function getAllEvents({getUnused = false} = {}) {
  * @param  {Object} newConfig The new config to use
  */
 function reloadConfig(newConfig) {
-  purgeCache('./config.json')
-  if (newConfig !== undefined) {
-    config = newConfig
-  } else {
-    config = require('./config.json')
-  }
+  purgeCache(configPath)
+  config = (newConfig !== undefined) ? newConfig : require(configPath)
   module.exports.config = config
 }
 module.exports.reloadConfig = reloadConfig
+
 /**
  * Saves the currently stored config
- * @return {Promise} A promise that resolves when settings are saved
+ * @return {Promise} A promise that resolves when config is saved
  */
 function saveConfig() {
-  return writeFile('./config.json', config)
+  // Avoid circular JSON from having a User object as the owner
+  config.owner = (config.owner ? extractOwner(config.owner) : null)
+  return writeFile(configPath, config)
 }
 module.exports.saveConfig = saveConfig
+
 //More helper functions, but this time for managing the module system
 
 /**
@@ -340,7 +500,7 @@ module.exports.saveConfig = saveConfig
 function loadModules() {
   modules = {}
   //You might ask "why sync?", that's because there's no use in logging in if all modules aren't loaded yet
-  let moduleFiles = recurReadSync(path.join(__dirname, 'modules'))
+  let moduleFiles = recurReadSync(path.join(rootDir, config.moduleDir))
 
   moduleFiles = moduleFiles.filter(file => path.extname(file) === '.js') //only load js files
 
@@ -348,28 +508,45 @@ function loadModules() {
   let fails = []
 
   for (let file of moduleFiles) {
-    purgeCache(`${file}`)
+    purgeCache(file)
+    const rName = file.replace(path.join(rootDir, config.moduleDir), '')
 
-    if (require(`${file}`).config.autoLoad === false) {
-      logger.debug(`Skipping ${file.replace(path.join(__dirname, 'modules/'), '')}: AutoLoad Disabled`)
-      continue
-    }
-
-    logger.debug(`Loading ${file.replace(path.join(__dirname, 'modules/'), '')}`)
     try {
-      modules[require(`${file}`).config.name] = require(`${file}`)
-      succ.push(require(`${file}`).config.name)
+      const rFile = require(file)
+
+      if (rFile.config === undefined)
+        continue
+
+      if (rFile.config.autoload === false || rFile.config.autoLoad === false) {
+        logger.debug(`Skipping ${rName}: AutoLoad Disabled`)
+        continue
+      }
+
+      logger.debug(`Loading ${rName}`)
+      modules[rFile.config.name] = require(file)
+
+      if (typeof modules[rFile.config.name].events.init === 'function') {
+        modules[rFile.config.name].events.init(module.exports, bot)
+      }
+
+      succ.push(rFile.config.name)
     } catch (e) {
-      logger.warn(`Failed to load ${file.replace(path.join(__dirname, 'modules/'), '')}: \n${e}`)
-      fails.push(file.replace(path.join(__dirname, 'modules/')))
+      logger.warn(`Failed to load ${rName}: \n${e}`)
+      fails.push(rName)
+      moduleErrors.push({module: rName, error: e})
     }
   }
 
   logger.log(`Loaded: ${succ.join(', ')}`)
-  if (fails.length > 0) logger.warn(`Failed: ${fails.join(', ')}`)
+
+  if (fails.length > 0) {
+    logger.warn(`Failed: ${fails.join(', ')}`)
+  }
+
   return `Loaded ${succ.length} module(s) sucessfully; ${fails.length} failed.`
 }
 module.exports.loadModules = loadModules
+
 /**
  * (Re)load a single module
  * @param  {string} moduleName The name of the module to load
@@ -377,25 +554,35 @@ module.exports.loadModules = loadModules
  */
 function loadModule(moduleName) {
   try {
-    let moduleFiles = recurReadSync(path.join(__dirname, 'modules'))
+    let moduleFiles = recurReadSync(path.join(rootDir, config.moduleDir))
 
     for (let file of moduleFiles) {
       if (path.extname(file) !== '.js') continue
-      if (moduleName === require(file).config.name) {
-        logger.debug(`Loading ${file.replace(path.join(__dirname, 'modules/'), '')}`)
+
+      const rName = file.replace(path.join(rootDir, config.moduleDir), '')
+      const rFile = require(file)
+
+      if (rFile.config && moduleName === rFile.config.name) {
+        logger.debug(`Loading ${rName}`)
         purgeCache(file)
         modules[moduleName] = require(file)
+
+        if (typeof modules[moduleName].events.init === 'function') {
+          modules[moduleName].events.init(module.exports, bot)
+        }
+
         return `Loaded ${moduleName} successfully`
       }
     }
 
-    return 'Could not find module'
+    return 'Could not find module.'
   } catch (e) {
     logger.error(e)
     return 'Something went wrong!'
   }
 }
 module.exports.loadModule = loadModule
+
 /**
  * Unload a single module
  * @param  {string} moduleName The module to unload
@@ -403,13 +590,21 @@ module.exports.loadModule = loadModule
  */
 function unloadModule(moduleName) {
   try {
-    let moduleFiles = recurReadSync(path.join(__dirname, 'modules'))
+    let moduleFiles = recurReadSync(path.join(rootDir, config.moduleDir))
 
     for (let file of moduleFiles) {
       if (path.extname(file) !== '.js') continue
-      if (moduleName === require(`${file}`).config.name) {
-        logger.debug(`Unloading ${file.replace(path.join(__dirname, 'modules/'), '')}`)
+
+      const rFile = require(file)
+
+      if (rFile.config && moduleName === rFile.config.name) {
+        logger.debug(`Unloading ${file.replace(path.join(rootDir, config.moduleDir), '')}`)
         purgeCache(`${file}`)
+
+        if (typeof modules[moduleName].destroy === 'function') {
+          modules[moduleName].destroy(module.exports, bot)
+        }
+
         delete modules[moduleName]
         return `Successfully unloaded ${moduleName}`
       }
@@ -430,13 +625,13 @@ module.exports.unloadModule = unloadModule
  */
 function getModuleInfo(moduleName) {
   try {
-    let moduleFiles = recurReadSync(path.join(__dirname, 'modules'))
+    let moduleFiles = recurReadSync(path.join(rootDir, config.moduleDir))
 
     for (let file of moduleFiles) {
       if (path.extname(file) !== '.js') continue
 
       let config = require(file).config
-      if (moduleName === config.name) {
+      if (config && moduleName === config.name) {
         let p = file
         let dir = path.parse(file).dir.split(path.sep).pop() //returns the folder it's in
         return {config, path: p, dir}
@@ -470,14 +665,19 @@ function purgeCache(moduleName) {
  */
 function reportError(err, errType) {
   let errID = Math.floor(Math.random() * 1000000).toString(16)
-  let errMsg = `Error: ${errType}\nID: ${errID}\n\`\`\`js\n${err.toString()}` + '\n```'
-             + '\nStack Trace:\n```javascript\n' + new Error().stack + '\n```'
+  let errMsg = `Error: ${errType}\nID: ${errID}\n\`\`\`js\n${err.toString()}\n\`\`\``
 
-  if (!config.selfbot)
-    bot.users.get(config.owner.id).sendMessage(errMsg, {split: {prepend: '```js\n', append: '\n```'}})
+  if (!config.selfbot && config.owner) {
+    const owner = bot.users.get(config.owner.id)
+    if (owner) owner.send(errMsg, {split: {prepend: '```js\n', append: '\n```'}})
+  }
+
+  console.error(errType, err)
+
   return errID
 }
 module.exports.reportError = reportError
+
 /**
  * Promisefied fs.writefile
  * @param  {String} fileName    The filename to write to
@@ -496,40 +696,94 @@ function writeFile(fileName, fileContent) {
 /**
  * Create a gist
  * @param  {Object}    files       The files to add, in format of {"filename.txt": {content: "words"}}
+ * @param  {String=''} filename    An optional param to specify the filename, if specified "files" is interpreted as the text to upload
  * @param  {String=''} description An optional description for the gist
  * @return {Promise} GitHub's response
  */
-function createGist(files, description = '') {
-  const o = {
-    method: 'POST',
-    uri: 'https://api.github.com' + '/gists',
-    headers: { 'User-Agent': `${bot.user.username} Bot by ${config.owner.username} on Discord` },
-    json: true,
-    body: { description, files }
+function createGist(files, {filename = '', description = ''} = {}) {
+  if (filename) {
+    files = {[filename]: {content: files}}
   }
 
-  return request(o)
+  return snek.post('https://api.github.com/gists', {
+    headers: {
+      'User-Agent': `${bot.user.username} Bot by ${config.owner.username} on Discord`,
+      'Authorization': `token ${process.env.GITHUB_TOKEN}`
+    },
+    data: {files, description}
+  })
 }
 module.exports.createGist = createGist
 
+/**
+ * Formats a user like `**username**#discrim`
+ * Or optionally `**username**#discrim (id)`
+ * Adds a left-to-right character `\u{200e}` to deal correctly with arabic usernames etc
+ *
+ * @param {Discord.User} The user to format
+ * @param {addId=true}   If `(id)` should be appended
+ * @return {String} The formatted string
+ */
+function formatUser(user, {id = true, plain = false} = {}) {
+  user = user.user ? user.user : user
+  return `${plain ? '' : '**'}${escapeMarkdown(user.username)}${plain ? '' : '**'}\u{200e}#${user.discriminator}${id ? ' (' + user.id + ')' : ''}`
+}
+module.exports.formatUser = formatUser
+
+/**
+ * Saves then exits
+ */
+function saveAndExit() {
+  process.exit()
+}
+module.exports.saveAndExit = saveAndExit
+
+bot = new Discord.Client()
+bot.sleet = module.exports
+let modules = {}
+let moduleErrors = []
+loadModules()
+let events = getAllEvents()
 startEvents()
 
+/**
+ * An array of all the modules that are loaded
+ * @type {Object[]}
+ */
+module.exports.modules = modules
+
+function extractOwner({id, username, discriminator, avatar}) {
+  return {id, username, discriminator, avatar}
+}
+
 logger.info('Starting Login...')
-bot.login(config.token).then(() => {
+
+if (!process.env.BOT_TOKEN && !config.token) {
+  logger.error('Missing bot token (BOT_TOKEN)')
+  process.exit(1)
+}
+
+bot.login(process.env.BOT_TOKEN || config.token).then(async () => {
   logger.info('Logged in!')
+
   if (config.owner === null) {
     logger.info('Fetching Owner info...')
-    bot.fetchApplication().then(OAuth => {
-      config.owner = OAuth.owner
-      fs.writeFile('./config.json', JSON.stringify(config, null, 2), (err) => {
-        logger.info((err) ? err : 'Saved Owner info!')
-      })
+
+    const OAuth = await bot.fetchApplication()
+    config.owner = extractOwner(OAuth.owner)
+
+    fs.writeFile(configPath, JSON.stringify(config, null, 2), (err) => {
+      logger.info((err) ? err : 'Saved Owner info!')
     })
+  }
+
+  if (moduleErrors.length > 0) {
+    reportError(moduleErrors.map(v => `${v.module}: ${v.error.message}`).join('\n'), 'Failed to load modules')
   }
 })
 
 bot.on('disconnect', reason => {
-  logger.log(reason)
+  logger.warn(reason)
   saveAndExit()
 })
 
@@ -540,27 +794,5 @@ process.on('exit', code => {
 
 process.on('unhandledRejection', (reason, p) => {
   logger.error(`Uncaught Promise Error: \n${reason}\nStack:\n${reason.stack}\nPromise:\n${require('util').inspect(p, { depth: 2 })}`)
-  fs.appendFile('err.log', p, console.err)
+  fs.appendFile('err.log', p, 'utf8', console.error)
 })
-
-/**
- * Saves then exits
- */
-function saveAndExit() {
-  settings.saveAll().then(() => {
-    process.nextTick(process.exit()) //rippo
-  }).catch(logger.error)
-}
-module.exports.saveAndExit = saveAndExit
-
-/**
- * An array of all the modules that are loaded
- * @type {Object[]}
- */
-module.exports.modules = modules
-
-bot.logger = logger
-bot.modules = module.exports
-
-// *cries in js*
-

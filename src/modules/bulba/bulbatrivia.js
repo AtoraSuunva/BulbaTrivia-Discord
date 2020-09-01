@@ -1,7 +1,7 @@
 // Yay Trivia
 const config = module.exports.config = {
   name: 'trivia',
-  invokers: ['', 'trivia'],
+  invokers: ['trivia'],
   help: 'Get some fun "trivia".',
   expandedHelp: 'Just run it fam'
 }
@@ -23,7 +23,7 @@ blog.quote({limit: 1}, (e, r) => {
 
 module.exports.events = {}
 module.exports.events.message = (bot, message) => {
-  const [cmd] = bot.modules.shlex(message)
+  const [cmd] = bot.sleet.shlex(message)
 
   if (cmd && !config.invokers.includes(cmd.toLowerCase())) return
 
@@ -40,7 +40,7 @@ module.exports.events.message = (bot, message) => {
     let text = clean(r.posts[0].text).replace(/<br\/?>/g, '')
     let source = r.posts[0].source
 
-    if (r.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined)
+    if (r.posts[0].source && r.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined)
       source = source.match(/<a.*?>(.*?)<\/a>/)[1]
 
     message.channel.send(
