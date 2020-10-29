@@ -22,14 +22,13 @@
   "dependencies": {
     "@discordjs/uws": "^10.149.0",
     "cheerio": "^1.0.0-rc.3",
-    "discord.js": "^11.5.1",
-    "entities": "^2.0.0",
-    "libsodium-wrappers": "^0.7.5",
-    "node-fetch": "^2.6.0",
-    "pg-promise": "^9.1.1",
+    "discord.js": "^11.6.4",
+    "entities": "^2.1.0",
+    "libsodium-wrappers": "^0.7.8",
+    "node-fetch": "^2.6.1",
+    "pg-promise": "^10.7.1",
     "pmx": "^1.6.7",
     "recursive-readdir-sync": "^1.0.6",
-    "request-promise-native": "^1.0.5",
     "tumblr": "^0.4.1",
     "zucc": "^0.1.2"
   }
