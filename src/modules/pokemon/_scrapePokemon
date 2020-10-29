@@ -1,5 +1,5 @@
 const cheerio = require('cheerio')
-const snekfetch = require('snekfetch')
+const fetch = require('node-fetch')
 const api = {
   bulba: 'https://bulbapedia.bulbagarden.net/wiki/', // """api"""
   pokemon: 'https://pokeapi.co/api/v2/pokemon/',
@@ -30,8 +30,8 @@ async function getBio(poke) {
 
     console.log(api.bulba + poke)
 
-    const res = await snekfetch.get(api.bulba + poke)
-    const bio = cheerio.load(res.text)('#Biology').parent().nextUntil('h2').text().trim().replace(/\n/g, '\n\n')
+    const body = await fetch.get(api.bulba + poke).then(res => res.text())
+    const bio = cheerio.load(body)('#Biology').parent().nextUntil('h2').text().trim().replace(/\n/g, '\n\n')
 
     console.log(bio)
 
@@ -53,12 +53,11 @@ const getType = (types, i) => types.find(e => e.slot === i) || {type: {name: (i 
 
 async function getPoke(poke) {
   try {
-    const [resInfo, resSpecies] = await Promise.all([
-      snekfetch.get(api.pokemon + poke),
-      snekfetch.get(api.species + poke)])
+    const [info, species] = await Promise.all([
+      fetch.get(api.pokemon + poke).then(r => r.json()),
+      fetch.get(api.species + poke).then(r => r.json()),
+    ])
 
-    const info = resInfo.body
-    const species = resSpecies.body
     const bio = await getBio(info.name)
 
     const stats = {}
