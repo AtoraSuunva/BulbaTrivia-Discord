@@ -1,21 +1,23 @@
 // Yay Trivia
-const config = module.exports.config = {
+const config = (module.exports.config = {
   name: 'trivia',
   invokers: ['trivia'],
   help: 'Get some fun "trivia".',
-  expandedHelp: 'Just run it fam'
-}
+  expandedHelp: 'Just run it fam',
+})
 
-const Discord  = require('discord.js')
-const tumblr   = require('tumblr')
+const Discord = require('discord.js')
+const tumblr = require('tumblr')
 const entities = require('entities')
 const auth = require('./auth.json')
 
-const blog = new tumblr.Blog('thanksbulbapedia.tumblr.com', {consumer_key: auth.tumblr})
+const blog = new tumblr.Blog('thanksbulbapedia.tumblr.com', {
+  consumer_key: auth.tumblr,
+})
 
 let totalPosts = 0
 
-blog.quote({limit: 1}, (e, r) => {
+blog.quote({ limit: 1 }, (e, r) => {
   if (e) throw e
 
   totalPosts = r.total_posts
@@ -27,7 +29,7 @@ module.exports.events.message = (bot, message) => {
 
   if (cmd && !config.invokers.includes(cmd.toLowerCase())) return
 
-  blog.quote({limit: 1, offset: randOffset(totalPosts - 1)}, (e,r) => {
+  blog.quote({ limit: 1, offset: randOffset(totalPosts - 1) }, (e, r) => {
     if (e) {
       message.channel.send('Something went wrong while getting the quote...')
       bot.logger.error(e)
@@ -40,13 +42,13 @@ module.exports.events.message = (bot, message) => {
     let text = clean(r.posts[0].text).replace(/<br\/?>/g, '')
     let source = r.posts[0].source
 
-    if (r.posts[0].source && r.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined)
+    if (
+      r.posts[0].source &&
+      r.posts[0].source.match(/<a.*?>(.*?)<\/a>/)[1] !== undefined
+    )
       source = source.match(/<a.*?>(.*?)<\/a>/)[1]
 
-    message.channel.send(
-      `*"${text}"*\n` +
-      `—${source}`
-    )
+    message.channel.send(`*"${text}"*\n` + `—${source}`)
   })
 }
 
@@ -55,5 +57,5 @@ function clean(str) {
 }
 
 function randOffset(max) {
-  return Math.floor(Math.random() * (max));
+  return Math.floor(Math.random() * max)
 }
