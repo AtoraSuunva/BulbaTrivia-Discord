@@ -1,0 +1,24 @@
+{
+    "owner": {
+        "id": "74768773940256768",
+        "username": "Atlas",
+        "discriminator": "2564",
+        "avatar": "f761c992a600295cca830e71eb7a7fb7",
+        "bot": false,
+        "lastMessageID": null
+    },
+    "moduleDir": "modules",
+    "invokers": [
+        "+bulba",
+        "bulba",
+        "p?",
+        "hey bulba "
+    ],
+    "botbans": [],
+    "debug": true,
+    "intents": [
+      "GUILDS",
+      "GUILD_MESSAGES",
+      "DIRECT_MESSAGES"
+    ]
+}

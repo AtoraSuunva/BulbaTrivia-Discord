@@ -28,6 +28,7 @@ const metrics = {
 }
 
 setInterval(() => {
+  if (!bot.readyAt) return
   metrics.ping.update(bot.ws.ping)
   metrics.guilds.set(bot.guilds.cache.size)
 }, 3000)
