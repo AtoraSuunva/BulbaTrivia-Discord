@@ -20,14 +20,14 @@
   },
   "homepage": "https://github.com/AtoraSuunva/BulbaTrivia-Discord#readme",
   "dependencies": {
-    "bufferutil": "^4.0.3",
-    "cheerio": "^1.0.0-rc.5",
-    "discord.js": "^12.5.2",
-    "node-fetch": "^2.6.1",
-    "pg-promise": "^10.9.5",
+    "bufferutil": "^4.0.6",
+    "cheerio": "^1.0.0-rc.10",
+    "discord.js": "^12.5.3",
+    "node-fetch": "^2.6.6",
+    "pg-promise": "^10.11.1",
     "pmx": "^1.6.7",
     "recursive-readdir-sync": "^1.0.6",
-    "utf-8-validate": "^5.0.4",
+    "utf-8-validate": "^5.0.8",
     "zlib-sync": "^0.1.7"
   }
 }
