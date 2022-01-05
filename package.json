@@ -8,28 +8,25 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AtlasTheBot/BulbaTrivia-Discord.git"
+    "url": "git+https://github.com/AtoraSuunva/BulbaTrivia-Discord.git"
   },
   "keywords": [
     "bulba"
   ],
-  "author": "AtlasTheBot",
+  "author": "AtoraSuunva",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/AtlasTheBot/BulbaTrivia-Discord/issues"
+    "url": "https://github.com/AtoraSuunva/BulbaTrivia-Discord/issues"
   },
-  "homepage": "https://github.com/AtlasTheBot/BulbaTrivia-Discord#readme",
+  "homepage": "https://github.com/AtoraSuunva/BulbaTrivia-Discord#readme",
   "dependencies": {
     "bufferutil": "^4.0.3",
     "cheerio": "^1.0.0-rc.5",
     "discord.js": "^12.5.2",
-    "entities": "^2.2.0",
-    "erlpack": "github:discord/erlpack",
     "node-fetch": "^2.6.1",
     "pg-promise": "^10.9.5",
     "pmx": "^1.6.7",
     "recursive-readdir-sync": "^1.0.6",
-    "tumblr": "^0.4.1",
     "utf-8-validate": "^5.0.4",
     "zlib-sync": "^0.1.7"
   }
