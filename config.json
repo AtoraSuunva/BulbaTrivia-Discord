@@ -12,13 +12,14 @@
         "+bulba",
         "bulba",
         "p?",
-        "hey bulba "
+        "hey bulba ",
+        "<@!200723772427337729> "
     ],
     "botbans": [],
     "debug": true,
     "intents": [
-      "GUILDS",
-      "GUILD_MESSAGES",
-      "DIRECT_MESSAGES"
+        "GUILDS",
+        "GUILD_MESSAGES",
+        "DIRECT_MESSAGES"
     ]
 }

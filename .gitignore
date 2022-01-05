@@ -2,3 +2,5 @@ node_modules
 err.log
 auth.json
 ecosystem.config.js
+.env
+.vscode
