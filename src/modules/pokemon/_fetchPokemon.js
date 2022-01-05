@@ -11,6 +11,7 @@ const bulbaMap = {
   'nidoran-m': 'Nidoran%E2%99%82_(Pok%C3%A9mon)',
   'mr-mime': 'Mr._Mime',
   'mime-jr': 'Mime_jr.',
+  'ho-oh': 'Ho-Oh_(Pok%C3%A9mon)',
   'type-null': 'Type:_Null',
   'jangmo-o': 'jangmo-o',
   'hakamo-o': 'hakamo-o',
