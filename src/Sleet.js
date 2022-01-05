@@ -152,7 +152,10 @@ function startEvents() {
 
   function deleteMessage(message) {
     if (sentMessages.has(message.id)) {
-      sentMessages.get(message.id).delete().catch(_ => {})
+      sentMessages
+        .get(message.id)
+        .delete()
+        .catch(_ => {})
       return sentMessages.delete(message.id)
     }
   }
@@ -224,18 +227,22 @@ let handler = {
       const split = options && options.split
 
       if (typeof content === 'string' && !split && content.length > 2000) {
-        let ext = (options && options._ext) || 'txt', fileContent = content, codeMatch = content.match(codeRegex)
+        let ext = (options && options._ext) || 'txt',
+          fileContent = content,
+          codeMatch = content.match(codeRegex)
 
         if (codeMatch) {
-          ([, ext, fileContent] = codeMatch)
+          ;[, ext, fileContent] = codeMatch
         }
 
         isEditable = false
         sendContent = {
-          files: [{
-            name: `content.${ext}`,
-            attachment: Buffer.from(fileContent, 'utf8'),
-          }]
+          files: [
+            {
+              name: `content.${ext}`,
+              attachment: Buffer.from(fileContent, 'utf8'),
+            },
+          ],
         }
       }
 
